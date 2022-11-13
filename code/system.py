@@ -12,6 +12,7 @@ from typing import List
 import numpy as np
 from utils import utils
 from utils.utils import Puzzle
+import scipy.linalg
 
 # The required maximum number of dimensions for the feature vectors.
 N_DIMENSIONS = 20
@@ -63,9 +64,40 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
         np.ndarray: The reduced feature vectors.
     """
 
+    #Computing the principle components
+    princiComponents = calculate_principal_components(data, 40)
+
+
+    #Dimensionality reduction by projecting the 400 dimensional images onto the
+    #previously specified number of dimensions
+    
+    pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
+
+    reconstructed = np.dot(pcatrain_data, princiComponents.transpose()) + np.mean(data)
+
+    N = N_DIMENSIONS
+    mean_train = np.mean(data, axis=0)
+    reconstructed = (
+        np.dot(
+            np.dot(data[1, :] - mean_train, princiComponents[:, 0 : N - 1]),
+            princiComponents[:, 0 : N - 1].transpose(),
+        )
+        + mean_train
+    )
+
     reduced_data = data[:, 0:N_DIMENSIONS]
     return reduced_data
 
+def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np.ndarray:
+    covx = np.cov(data, rowvar=0)
+    N = covx.shape[0] #N is the number of pixes (existing dimentions)
+
+    #w isn't needed as it is an eigenvalue and we only want the vector
+    #Calculate 40 then we will select the best 40 later on in the code
+    w, v = scipy.linalg.eigh(covx, eigvals=(N - numOfDimensions, N - 1)) 
+
+    v = np.fliplr(v) #Reverses order of elements along axis 1
+    return v
 
 def process_training_data(fvectors_train: np.ndarray, labels_train: np.ndarray) -> dict:
     """Process the labeled training data and return model parameters stored in a dictionary.
@@ -98,6 +130,7 @@ def process_training_data(fvectors_train: np.ndarray, labels_train: np.ndarray) 
     model["labels_train"] = labels_train.tolist()
     fvectors_train_reduced = reduce_dimensions(fvectors_train, model)
     model["fvectors_train"] = fvectors_train_reduced.tolist()
+
     return model
 
 
