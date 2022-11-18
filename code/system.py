@@ -64,83 +64,64 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     Returns:
         np.ndarray: The reduced feature vectors.
     """
+    if ("PCA" not in model):
+        #Computing the principle components
+        #Returns 40 principle componenets for each one of the 400 test images      
+        
+        princiComponents = calculate_principal_components(data, 40)    
+        pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
 
-    #Computing the principle components
-    #Returns 40 principle componenets for each one of the 1560 test images
-    princiComponents = calculate_principal_components(data, 40)    
-    
-    pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
-
-    currentHighestScore = 0
-    bestPCAs = [None] * 20
-    testPCAs = [None] * 20
-
-    iterationHighScore = 0
-    currentBestNext = 0
-
-    import time
-
-    start = time.time()
-
-    random.seed(random.randint(0, 100))
-    print(len(model["labels_train"]))
-    randomlist = []
-    for i in range(0,20):
-        n = random.randint(0, (len(model["labels_train"]) - 1))
-        randomlist.append(n)
-
-    for i in range(0,20):
+        #currentHighestScore = 0
+        bestPCAs = [None] * 20
+        testPCAs = [None] * 20
         iterationHighScore = 0
-        for x in range(0,40):
-                if x not in bestPCAs:
-                    testPCAs = bestPCAs.copy()
-                    testPCAs[i] = x
-                    score = ratePCAsRandomLOO(
-                        pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
-                    )
-                    if(score > iterationHighScore):
-                        iterationHighScore = score
-                        currentBestNext = testPCAs
-        currentHighestScore = iterationHighScore
-        bestPCAs = currentBestNext               
-                    
+        currentBestNext = 0
 
-    end = time.time()
+        labels = model["labels_train"]
 
-    print("This took")
-    print((start - end))
-    print(currentHighestScore)
-    print(bestPCAs)
+        randomlist = [None] * 26
+        randomListSavedLetters = [None] * 26
+        count = 0
+        while(randomlist[25] == None):
+            n = random.randint(0, (len(data) - 1))
+            if labels[n] not in randomListSavedLetters:
+                randomlist[count] = n
+                randomListSavedLetters[count] = labels[n]
+                count += 1
 
 
-    reduced_data = pcatrain_data[bestPCAs]
+        for i in range(0,20):
+            iterationHighScore = 0
+            for x in range(0,40):
+                    if x not in bestPCAs:
+                        testPCAs = bestPCAs.copy()
+                        testPCAs[i] = x
+                        score = ratePCAsRandomLOO(
+                            pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
+                        )
+                        if(score > iterationHighScore):
+                            iterationHighScore = score
+                            currentBestNext = testPCAs
+            #currentHighestScore = iterationHighScore
+            bestPCAs = currentBestNext
+
+            #print(currentHighestScore)
+            #print(bestPCAs)
+
+        model["PCA"] = princiComponents.tolist()
+        model["train_mean"] = np.mean(data)
+        model["best_dimensions"] = bestPCAs
+
+        reduced_data = pcatrain_data[:,bestPCAs]
+        print(reduced_data.shape)
+    else:
+        pcatrain_data = np.dot((data - model["train_mean"]), np.asarray(model["PCA"]))
+        reduced_data = pcatrain_data[:, model["best_dimensions"]]
 
     #Need to subtract the mean of the data set from the training data mean.
     #To the rest of the data including the test data
     return reduced_data
 
-def ratePCAs(train, train_labels, features):
-    results = [None] * len(train_labels)
-    print(train.shape)
-    for i in range(0, len(train_labels)):
-        #Leave one out testing
-        currentTest = train[i, features]
-        test_label = train_labels[i]
-        currentTrain = np.delete(train, i, axis=0)
-        currentTrain = currentTrain[:, features]
-        currentTrainLabels = np.delete(train_labels, i, axis=0)
-
-        # Super compact implementation of nearest neighbour
-        x = np.dot(currentTest, currentTrain.transpose())
-        modtest = np.sqrt(np.sum(currentTest * currentTest))
-        modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
-        dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
-        nearest = np.argmax(dist, axis=1)
-        label = currentTrainLabels[nearest]
-        results[i] = (label == test_label)
-    
-    score = (100.0 * sum(results)) / len(results)
-    return score
 
 def ratePCAsRandomLOO(train, train_labels, features, randomVars):
     results = [None] * len(randomVars)
@@ -228,7 +209,18 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
     Returns:
         List[str]: A list of classifier labels, i.e. one label per input feature vector.
     """
-    return ["E"] * fvectors_test.shape[0]
+
+    # Super compact implementation of nearest neighbour
+    train = np.asarray(model["fvectors_train"])
+    train_labels = np.asarray(model["labels_train"])
+    x = np.dot(fvectors_test, train.transpose())
+    modtest = np.sqrt(np.sum(fvectors_test * fvectors_test, axis=1))
+    modtrain = np.sqrt(np.sum(train * train, axis=1))
+    dist = x / np.outer(modtest, modtrain.transpose())
+    # cosine distance
+    nearest = np.argmax(dist, axis=1)
+    label = train_labels[nearest]
+    return label
 
 
 def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]:
