@@ -13,6 +13,7 @@ import numpy as np
 from utils import utils
 from utils.utils import Puzzle
 import scipy.linalg
+import random
 
 # The required maximum number of dimensions for the feature vectors.
 N_DIMENSIONS = 20
@@ -65,28 +66,103 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     """
 
     #Computing the principle components
-    princiComponents = calculate_principal_components(data, 40)
-
-
-    #Dimensionality reduction by projecting the 400 dimensional images onto the
-    #previously specified number of dimensions
+    #Returns 40 principle componenets for each one of the 1560 test images
+    princiComponents = calculate_principal_components(data, 40)    
     
     pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
 
-    reconstructed = np.dot(pcatrain_data, princiComponents.transpose()) + np.mean(data)
+    currentHighestScore = 0
+    bestPCAs = [None] * 20
+    testPCAs = [None] * 20
 
-    N = N_DIMENSIONS
-    mean_train = np.mean(data, axis=0)
-    reconstructed = (
-        np.dot(
-            np.dot(data[1, :] - mean_train, princiComponents[:, 0 : N - 1]),
-            princiComponents[:, 0 : N - 1].transpose(),
-        )
-        + mean_train
-    )
+    iterationHighScore = 0
+    currentBestNext = 0
 
-    reduced_data = data[:, 0:N_DIMENSIONS]
+    import time
+
+    start = time.time()
+
+    random.seed(random.randint(0, 100))
+    print(len(model["labels_train"]))
+    randomlist = []
+    for i in range(0,20):
+        n = random.randint(0, (len(model["labels_train"]) - 1))
+        randomlist.append(n)
+
+    for i in range(0,20):
+        iterationHighScore = 0
+        for x in range(0,40):
+                if x not in bestPCAs:
+                    testPCAs = bestPCAs.copy()
+                    testPCAs[i] = x
+                    score = ratePCAsRandomLOO(
+                        pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
+                    )
+                    if(score > iterationHighScore):
+                        iterationHighScore = score
+                        currentBestNext = testPCAs
+        currentHighestScore = iterationHighScore
+        bestPCAs = currentBestNext               
+                    
+
+    end = time.time()
+
+    print("This took")
+    print((start - end))
+    print(currentHighestScore)
+    print(bestPCAs)
+
+
+    reduced_data = pcatrain_data[bestPCAs]
+
+    #Need to subtract the mean of the data set from the training data mean.
+    #To the rest of the data including the test data
     return reduced_data
+
+def ratePCAs(train, train_labels, features):
+    results = [None] * len(train_labels)
+    print(train.shape)
+    for i in range(0, len(train_labels)):
+        #Leave one out testing
+        currentTest = train[i, features]
+        test_label = train_labels[i]
+        currentTrain = np.delete(train, i, axis=0)
+        currentTrain = currentTrain[:, features]
+        currentTrainLabels = np.delete(train_labels, i, axis=0)
+
+        # Super compact implementation of nearest neighbour
+        x = np.dot(currentTest, currentTrain.transpose())
+        modtest = np.sqrt(np.sum(currentTest * currentTest))
+        modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
+        dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
+        nearest = np.argmax(dist, axis=1)
+        label = currentTrainLabels[nearest]
+        results[i] = (label == test_label)
+    
+    score = (100.0 * sum(results)) / len(results)
+    return score
+
+def ratePCAsRandomLOO(train, train_labels, features, randomVars):
+    results = [None] * len(randomVars)
+    for i in range(0, len(randomVars)):
+        #Leave one out testing
+        currentTest = train[randomVars[i], features]
+        test_label = train_labels[randomVars[i]]
+        currentTrain = np.delete(train, randomVars[i], axis=0)
+        currentTrain = currentTrain[:, features]
+        currentTrainLabels = np.delete(train_labels, randomVars[i], axis=0)
+
+        # Super compact implementation of nearest neighbour
+        x = np.dot(currentTest, currentTrain.transpose())
+        modtest = np.sqrt(np.sum(currentTest * currentTest))
+        modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
+        dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
+        nearest = np.argmax(dist, axis=1)
+        label = currentTrainLabels[nearest]
+        results[i] = (label == test_label)
+    
+    score = (100.0 * sum(results)) / len(results)
+    return score
 
 def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np.ndarray:
     covx = np.cov(data, rowvar=0)
