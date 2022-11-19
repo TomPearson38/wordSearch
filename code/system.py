@@ -7,6 +7,7 @@ REWRITE THE FUNCTIONS BELOW AND REWRITE THIS DOCSTRING
 version: v1.0
 """
 
+import math
 from typing import List
 
 import numpy as np
@@ -79,15 +80,24 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        randomlist = [None] * 26
-        randomListSavedLetters = [None] * 26
+        lettersCount = [0] * 26
+
+        for x in labels:
+            position = ord(x) - 65
+            lettersCount[position] = lettersCount[position] + 1
+
+        for i in range(0,len(lettersCount)):
+            lettersCount[i] = math.ceil(lettersCount[i]/20)
+
+        randomlist = [None] * sum(lettersCount)
         count = 0
-        while(randomlist[25] == None):
+        while((randomlist[len(randomlist) - 1]) == None):
             n = random.randint(0, (len(data) - 1))
-            if labels[n] not in randomListSavedLetters:
+            currentLetter = labels[n]
+            currentLetterOrd = ord(currentLetter) - 65
+            if lettersCount[currentLetterOrd] != 0:
                 randomlist[count] = n
-                randomListSavedLetters[count] = labels[n]
-                count += 1
+                count = count + 1
 
 
         for i in range(0,20):
@@ -102,11 +112,8 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
                         if(score > iterationHighScore):
                             iterationHighScore = score
                             currentBestNext = testPCAs
-            #currentHighestScore = iterationHighScore
-            bestPCAs = currentBestNext
 
-            #print(currentHighestScore)
-            #print(bestPCAs)
+            bestPCAs = currentBestNext
 
         model["PCA"] = princiComponents.tolist()
         model["train_mean"] = np.mean(data)
