@@ -7,7 +7,6 @@ REWRITE THE FUNCTIONS BELOW AND REWRITE THIS DOCSTRING
 version: v1.0
 """
 
-import math
 from typing import List
 
 import numpy as np
@@ -78,42 +77,22 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
         iterationHighScore = 0
         currentBestNext = 0
 
-        labels = model["labels_train"]
-
-        lettersCount = [0] * 26
-
-        for x in labels:
-            position = ord(x) - 65
-            lettersCount[position] = lettersCount[position] + 1
-
-        for i in range(0,len(lettersCount)):
-            lettersCount[i] = math.ceil(lettersCount[i]/5)
-
-        randomlist = [None] * sum(lettersCount)
-        count = 0
-        while((randomlist[len(randomlist) - 1]) == None):
-            n = random.randint(0, (len(data) - 1))
-            currentLetter = labels[n]
-            currentLetterOrd = ord(currentLetter) - 65
-            if lettersCount[currentLetterOrd] != 0:
-                randomlist[count] = n
-                count = count + 1
 
 
         for i in range(0,20):
             iterationHighScore = 0
             for x in range(0,40):
-                    if x not in bestPCAs:
-                        testPCAs = bestPCAs.copy()
-                        testPCAs[i] = x
-                        score = ratePCAsRandomLOO(
-                            pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
-                        )
-                        if(score > iterationHighScore):
-                            iterationHighScore = score
-                            currentBestNext = testPCAs
-
-            bestPCAs = currentBestNext
+                if x not in bestPCAs:
+                    testPCAs = bestPCAs.copy()
+                    testPCAs[i] = x
+                    score = ratePCAsRandomLOO(
+                        pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], 3
+                    )
+                    if(score > iterationHighScore):
+                        iterationHighScore = score
+                        currentBestNext = testPCAs
+            currentHighestScore = iterationHighScore
+            bestPCAs = currentBestNext    
 
         model["PCA"] = princiComponents.tolist()
         model["train_mean"] = np.mean(data)
@@ -130,38 +109,29 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     return reduced_data
 
 
-def ratePCAsRandomLOO(train, train_labels, features, randomVars):
-    #Leave one out testing
-    currentTest = train[randomVars, :]
-    currentTest = currentTest[:, features]
-    label_extraction = np.asarray(train_labels)
-    test_label = label_extraction[randomVars]
+def ratePCAsRandomLOO(train, train_labels, features, partitions):
+    results = [None] * partitions
+    for i in range(0,partitions):
+        #Leave one out testing
+        startVal = round((i * (len(train)/partitions)))
+        finishVal =  round((i+1) * (len(train)/partitions))
+        currentTest = train[startVal:finishVal, features]
+        test_label = train_labels[startVal:finishVal]
+        currentTrain = np.delete(train, np.s_[startVal:finishVal], axis=0)
+        currentTrain = currentTrain[:, features]
+        currentTrainLabels = np.delete(train_labels,  np.s_[startVal:finishVal], axis=0)
 
-    currentTrain = np.delete(train, randomVars, axis=0)
-    currentTrain = currentTrain[:, features]
-    currentTrainLabels = np.delete(train_labels, randomVars, axis=0)
-
-    #print(train.shape)
-
-    #print(len(train_labels))
-    #print(len(randomVars))
-
-    #print(currentTest.shape)
-    #print(test_label.shape)
+        # Super compact implementation of nearest neighbour
+        x = np.dot(currentTest, currentTrain.transpose())
+        modtest = np.sqrt(np.sum(currentTest * currentTest))
+        modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
+        dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
+        nearest = np.argmax(dist, axis=1)
+        labels = currentTrainLabels[nearest]
+        correctPercent = (labels == test_label)
+        results[i] = (sum(correctPercent)) / len(correctPercent)
     
-    #print(currentTrain.shape)
-    #print(currentTrainLabels.shape)
-
-    # Super compact implementation of nearest neighbour
-    x = np.dot(currentTest, currentTrain.transpose())
-    modtest = np.sqrt(np.sum(currentTest * currentTest))
-    modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
-    dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
-    nearest = np.argmax(dist, axis=1)
-    label = currentTrainLabels[nearest]
-    results = (label == test_label)
-    
-    score = (100.0 * sum(results)) / len(results)
+    score = (100*sum(results)) / len(results)
     return score
 
 def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np.ndarray:
