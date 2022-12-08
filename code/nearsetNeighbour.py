@@ -14,15 +14,10 @@ import numpy as np
 from utils import utils
 from utils.utils import Puzzle
 import scipy.linalg
-import scipy.stats
-from scipy.stats import multivariate_normal
 import random
 
 # The required maximum number of dimensions for the feature vectors.
 N_DIMENSIONS = 20
-
-def indexToChar(index) -> chr:
-    return chr(ord('A')+index)
 
 
 def load_puzzle_feature_vectors(image_dir: str, puzzles: List[Puzzle]) -> np.ndarray:
@@ -72,7 +67,8 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     """
     if ("PCA" not in model):
         #Computing the principle components
-        #Returns 40 principle componenets for each one of the 1560 test images      
+        #Returns 40 principle componenets for each one of the 400 test images      
+        
         princiComponents = calculate_principal_components(data, 40)    
         pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
 
@@ -80,53 +76,30 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         numberOfIterations = 20
 
-        #Generates random letters to be taken from the dataset.
-        #randomlist, randomLabels = randomPositions(data, labels)
-
         majorityArray = [0] * 40
 
-        #ratePCAsBinomial(lettersData, [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], pcatrain_data[randomlist], randomLabels)
-        '''
+
         for i in range(0, numberOfIterations):
-            randomIndexList, randomLabels = randomPositions(data, labels)
-
-            currentTestData = pcatrain_data[randomIndexList, :]
-            currentTrainData = np.delete(pcatrain_data, randomIndexList, axis=0)
-            currentTrainLabels = np.delete(np.asarray(model["labels_train"]), randomIndexList, axis=0)
-
-
-            lettersData = [None] * 26
-            #Identifying each individual letter in data.
-            for i in range(0, 26):
-                lettersData[i] = currentTrainData[currentTrainLabels == chr(ord('A')+ i)]
-
-            bestForwardsPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, None)
-            bestBackwardsPCAs = backwardsChaining(lettersData, currentTestData, randomLabels)
+            randomlist = randomPositions(data, labels)
+            bestForwardsPCAs = forwardsChaining(pcatrain_data, model, randomlist, None)
+            bestBackwardsPCAs = backwardsChaining(pcatrain_data, model, randomlist)
             iterationBest = list(set(bestForwardsPCAs).intersection(bestBackwardsPCAs))
-            bestPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, iterationBest)
+            bestPCAs = forwardsChaining(pcatrain_data, model, randomlist, iterationBest)
             for x in bestPCAs:
                 majorityArray[x] = majorityArray[x] + 1
-        '''   
-        bestPCAs = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+            
+        bestPCAs = []
 
-        #for i in range(0, 40):
-        #    if majorityArray[i] >= numberOfIterations/2:
-        #        bestPCAs.append(i)
+        for i in range(0, 40):
+            if majorityArray[i] >= numberOfIterations/2:
+                bestPCAs.append(i)
+        #need to implement counter for when over 20 elements
 
         print(bestPCAs)
 
-        lettersData = [None] * 26
-        #Identifying each individual letter in data.
-        for i in range(0, 26):
-            lettersData[i] = pcatrain_data[np.asarray(model["labels_train"]) == chr(ord('A')+ i)]
+        if len(bestPCAs) < 20:
+            bestPCAs = forwardsChaining(pcatrain_data, model, randomlist, bestPCAs)
 
-        #Converts data to desired feature set
-        selectedFeaturesData = [None] * 26
-        for i in range(0,26):
-            selectedFeaturesData[i] = (lettersData[i])[:, bestPCAs]
-
-        for i in range(0,26):
-            model["selectedFeaturesData{}".format(i)] = selectedFeaturesData[i].tolist()
 
         model["PCA"] = princiComponents.tolist()
         model["train_mean"] = np.mean(data)
@@ -145,18 +118,14 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 def randomPositions(data, labels):
     lettersCount = [0] * 26
 
-    #Counts the number of each letter
     for x in labels:
         position = ord(x) - 65
         lettersCount[position] = lettersCount[position] + 1
 
-    #Reduces their value to between 1 and 10
     for i in range(0,len(lettersCount)):
         lettersCount[i] = math.ceil(lettersCount[i]/10)
 
-    #Generates a stratified sample of the dataset
     randomlist = [None] * sum(lettersCount)
-    randomLabels = [None] * sum(lettersCount)
     count = 0
     while((randomlist[len(randomlist) - 1]) == None):
         n = random.randint(0, (len(data) - 1))
@@ -164,11 +133,10 @@ def randomPositions(data, labels):
         currentLetterOrd = ord(currentLetter) - 65
         if lettersCount[currentLetterOrd] != 0:
             randomlist[count] = n
-            randomLabels[count] = currentLetter
             count = count + 1
-    return randomlist, randomLabels
+    return randomlist
 
-def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBest):
+def forwardsChaining(pcatrain_data, model, randomlist, currentBest):
     if currentBest == None:
         currentBest = []
     bestPCAs = [None] * 20
@@ -178,14 +146,15 @@ def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBes
     for i in range(0, len(currentBest)):
         bestPCAs[i] = currentBest[i]
 
+
     for i in range(len(currentBest),20):
             iterationHighScore = 0
             for x in range(0,40):
                     if x not in bestPCAs:
                         testPCAs = bestPCAs.copy()
                         testPCAs[i] = x
-                        score = ratePCAsBinomial(
-                            currentTrainData, currentTestData, randomLabels, testPCAs[0:(i+1)]
+                        score = ratePCAsRandomLOO(
+                            pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
                         )
                         if(score > iterationHighScore):
                             iterationHighScore = score
@@ -194,7 +163,7 @@ def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBes
             bestPCAs = currentBestNext
     return bestPCAs
 
-def backwardsChaining(lettersData, currentTestData, randomLabels):
+def backwardsChaining(pcatrain_data, model, randomlist):
     worstPCAs = [None] * 20
     testPCAs = [None] * 20
     iterationHighScore = 0
@@ -206,8 +175,8 @@ def backwardsChaining(lettersData, currentTestData, randomLabels):
                     testPCAs = list(range(0, 40))
                     testPCAs = [ele for ele in testPCAs if ele not in worstPCAs]
                     testPCAs.remove(x)
-                    score = ratePCAsBinomial(
-                        lettersData, currentTestData, randomLabels, testPCAs[0:(i+1)]
+                    score = ratePCAsRandomLOO(
+                        pcatrain_data, model["labels_train"], testPCAs[0:(i+1)], randomlist
                     )
                     if(score > iterationHighScore):
                         iterationHighScore = score
@@ -218,47 +187,29 @@ def backwardsChaining(lettersData, currentTestData, randomLabels):
     finalPCAs = [ele for ele in finalPCAs if ele not in worstPCAs]
     return finalPCAs
 
-def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
-    newTrain = [None] * len(train)
+
+def ratePCAsRandomLOO(train, train_labels, features, randomVars):
+    #Leave one out testing
+    currentTest = train[randomVars, :]
+    currentTest = currentTest[:, features]
+    label_extraction = np.asarray(train_labels)
+    test_label = label_extraction[randomVars]
+
+    currentTrain = np.delete(train, randomVars, axis=0)
+    currentTrain = currentTrain[:, features]
+    currentTrainLabels = np.delete(train_labels, randomVars, axis=0)
+
+    # Super compact implementation of nearest neighbour
+    x = np.dot(currentTest, currentTrain.transpose())
+    modtest = np.sqrt(np.sum(currentTest * currentTest))
+    modtrain = np.sqrt(np.sum(currentTrain * currentTrain, axis=1))
+    dist = x / np.outer(modtest, modtrain.transpose())  # cosine distance
+    nearest = np.argmax(dist, axis=1)
+    label = currentTrainLabels[nearest]
+    results = (label == test_label)
     
-    #Converts test data to desired feature set
-    for i in range(0,26):
-        newTrain[i] = (train[i])[:, features]
-
-    #Converts random vars to desired feature set
-    randomVars = randomVars[:, features]
-
-    #Creates cov array for training data
-    covArray = [None] * 26
-    for count in range(0,26):
-        covArray[count] = np.cov(newTrain[count], rowvar=0)
-    
-    #Creates normal dist for training data
-    multivarNormalArray = [None] * 26
-    for i in range(0,26):
-        mean1 = np.mean(newTrain[i], axis=0)
-        multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
-
-    #Calcualtes probability of each letter belonging to each class
-    probabilityArray = [None] * 26
-    for i in range(0,26):
-        #print(multivarNormalArray[i].pdf(randomVars[:,:]))
-        probabilityArray[i] = multivarNormalArray[i].pdf(randomVars[:,:])
-    p = np.vstack(probabilityArray)
-    index = np.argmax(p, axis=0)
-    predictedChars = [None] * len(randomVarLabels)
-    for i in range(0, len(randomVarLabels)):
-        predictedChars[i] = indexToChar(index[i])
-
-    correct = [None] * len(predictedChars)
-
-    for i in range(0, len(predictedChars)):
-        if predictedChars[i] == randomVarLabels[i]:
-            correct[i] = True
-        else:
-            correct[i] = False
-
-    return (np.sum(correct) * 100.0 / len(randomVarLabels))
+    score = (100.0 * sum(results)) / len(results)
+    return score
 
 def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np.ndarray:
     covx = np.cov(data, rowvar=0)
@@ -325,35 +276,17 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
         List[str]: A list of classifier labels, i.e. one label per input feature vector.
     """
 
-    selectedFeaturesData = [None] * 26
-
-    for i in range(0,26):
-        selectedFeaturesData[i] = np.array(model["selectedFeaturesData{}".format(i)])
-
-    #Creates cov array for training data
-    covArray = [None] * 26
-    for i in range(0,26):
-        covArray[i] = np.cov(selectedFeaturesData[i], rowvar=0)
-    
-    #Creates normal dist for training data
-    multivarNormalArray = [None] * 26
-    for i in range(0,26):
-        mean1 = np.mean(selectedFeaturesData[i], axis=0)
-        multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
-
-    #Calcualtes probability of each letter belonging to each class
-    probabilityArray = [None] * 26
-    for i in range(0,26):
-        probabilityArray[i] = multivarNormalArray[i].pdf(fvectors_test[:,:])
-    p = np.vstack(probabilityArray)
-    index = np.argmax(p, axis=0)
-    predictedChars = [None] * len(fvectors_test[:])
-    for i in range(0, len(predictedChars)):
-        predictedChars[i] = indexToChar(index[i])
-
-    print(predictedChars)
-
-    return predictedChars
+    # Super compact implementation of nearest neighbour
+    train = np.asarray(model["fvectors_train"])
+    train_labels = np.asarray(model["labels_train"])
+    x = np.dot(fvectors_test, train.transpose())
+    modtest = np.sqrt(np.sum(fvectors_test * fvectors_test, axis=1))
+    modtrain = np.sqrt(np.sum(train * train, axis=1))
+    dist = x / np.outer(modtest, modtrain.transpose())
+    # cosine distance
+    nearest = np.argmax(dist, axis=1)
+    label = train_labels[nearest]
+    return label
 
 
 def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]:
