@@ -76,7 +76,7 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        numberOfIterations = 6
+        numberOfIterations = 10
 
         majorityArray = [0] * 40
 
@@ -103,8 +103,23 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
         bestPCAs = []
 
         for i in range(0, 40):
-            if majorityArray[i] >= numberOfIterations/2:
+            if majorityArray[i] >= math.floor(numberOfIterations/2):
                 bestPCAs.append(i)
+
+        if len(bestPCAs) < N_DIMENSIONS:
+            randomIndexList, randomLabels = randomPositions(data, labels)
+
+            currentTestData = pcatrain_data[randomIndexList, :]
+            currentTrainData = np.delete(pcatrain_data, randomIndexList, axis=0)
+            currentTrainLabels = np.delete(np.asarray(model["labels_train"]), randomIndexList, axis=0)
+
+
+            lettersData = [None] * 26
+            #Identifying each individual letter in data.
+            for i in range(0, 26):
+                lettersData[i] = currentTrainData[currentTrainLabels == chr(ord('A')+ i)]
+
+            bestForwardsPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, bestPCAs)
 
         print(bestPCAs)
 
