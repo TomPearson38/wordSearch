@@ -24,7 +24,6 @@ N_DIMENSIONS = 20
 def indexToChar(index) -> chr:
     return chr(ord('A')+index)
 
-
 def load_puzzle_feature_vectors(image_dir: str, puzzles: List[Puzzle]) -> np.ndarray:
     """Extract raw feature vectors for each puzzle from images in the image_dir.
 
@@ -49,7 +48,6 @@ def load_puzzle_feature_vectors(image_dir: str, puzzles: List[Puzzle]) -> np.nda
 
     """
     return utils.load_puzzle_feature_vectors(image_dir, puzzles)
-
 
 def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     """Reduce the dimensionality of a set of feature vectors down to N_DIMENSIONS.
@@ -78,15 +76,10 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        numberOfIterations = 20
-
-        #Generates random letters to be taken from the dataset.
-        #randomlist, randomLabels = randomPositions(data, labels)
+        numberOfIterations = 6
 
         majorityArray = [0] * 40
 
-        #ratePCAsBinomial(lettersData, [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], pcatrain_data[randomlist], randomLabels)
-        '''
         for i in range(0, numberOfIterations):
             randomIndexList, randomLabels = randomPositions(data, labels)
 
@@ -106,12 +99,12 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
             bestPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, iterationBest)
             for x in bestPCAs:
                 majorityArray[x] = majorityArray[x] + 1
-        '''   
-        bestPCAs = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+ 
+        bestPCAs = []
 
-        #for i in range(0, 40):
-        #    if majorityArray[i] >= numberOfIterations/2:
-        #        bestPCAs.append(i)
+        for i in range(0, 40):
+            if majorityArray[i] >= numberOfIterations/2:
+                bestPCAs.append(i)
 
         print(bestPCAs)
 
@@ -354,7 +347,6 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
     print(predictedChars)
 
     return predictedChars
-
 
 def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]:
     """Dummy implementation of find_words.
