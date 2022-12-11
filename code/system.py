@@ -21,6 +21,7 @@ import random
 # The required maximum number of dimensions for the feature vectors.
 N_DIMENSIONS = 20
 
+#Converts an index to its equivalent position in the alphabet
 def indexToChar(index) -> chr:
     return chr(ord('A')+index)
 
@@ -68,63 +69,60 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     Returns:
         np.ndarray: The reduced feature vectors.
     """
+
+    #If PCA is not in model then we are in the training phase
     if ("PCA" not in model):
         #Computing the principle components
-        #Returns 40 principle componenets for each one of the 1560 test images      
-        princiComponents = calculate_principal_components(data, 40)    
+        #Returns 30 principle componenets for each one of the 1560 test images      
+        princiComponents = calculate_principal_components(data, 30)    
         pcatrain_data = np.dot((data - np.mean(data)), princiComponents)
 
         labels = model["labels_train"]
 
-        numberOfIterations = 10
+        numberOfIterations = 20
+        majorityArray = [0] * 30 #Contains the times each one of the 30 PCA components has been selected as the best
 
-        majorityArray = [0] * 40
-
-        for i in range(0, numberOfIterations):
+        for count in range(0, numberOfIterations):
+            #Random Sample
             randomIndexList, randomLabels = randomPositions(data, labels)
-
+            #Extract random sample from train data
             currentTestData = pcatrain_data[randomIndexList, :]
             currentTrainData = np.delete(pcatrain_data, randomIndexList, axis=0)
             currentTrainLabels = np.delete(np.asarray(model["labels_train"]), randomIndexList, axis=0)
 
-
+            #Group each letter up in its own index (A's at [0], B's at [1], etc)
             lettersData = [None] * 26
-            #Identifying each individual letter in data.
             for i in range(0, 26):
                 lettersData[i] = currentTrainData[currentTrainLabels == chr(ord('A')+ i)]
 
+            #Forwards and backwards chaining to find best PCAs
             bestForwardsPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, None)
             bestBackwardsPCAs = backwardsChaining(lettersData, currentTestData, randomLabels)
+
+            #Groups PCAs that were in both
             iterationBest = list(set(bestForwardsPCAs).intersection(bestBackwardsPCAs))
+
+            #Adds generates PCAs to fill in the gaps
             bestPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, iterationBest)
+
+            #Makes note of the best
             for x in bestPCAs:
                 majorityArray[x] = majorityArray[x] + 1
+
+            print("Iteration Number " + str(count) + " Complete!")
  
         bestPCAs = []
 
-        for i in range(0, 40):
-            if majorityArray[i] >= math.floor(numberOfIterations/2):
-                bestPCAs.append(i)
+        numpyMajority = np.array(majorityArray)
 
-        if len(bestPCAs) < N_DIMENSIONS:
-            randomIndexList, randomLabels = randomPositions(data, labels)
+        bestPCAs = np.argpartition(numpyMajority, -20)[-20:]
 
-            currentTestData = pcatrain_data[randomIndexList, :]
-            currentTrainData = np.delete(pcatrain_data, randomIndexList, axis=0)
-            currentTrainLabels = np.delete(np.asarray(model["labels_train"]), randomIndexList, axis=0)
-
-
-            lettersData = [None] * 26
-            #Identifying each individual letter in data.
-            for i in range(0, 26):
-                lettersData[i] = currentTrainData[currentTrainLabels == chr(ord('A')+ i)]
-
-            bestForwardsPCAs = forwardsChaining(lettersData, currentTestData, randomLabels, bestPCAs)
+        bestPCAs = bestPCAs.tolist()
 
         print(bestPCAs)
 
-        lettersData = [None] * 26
         #Identifying each individual letter in data.
+        lettersData = [None] * 26
         for i in range(0, 26):
             lettersData[i] = pcatrain_data[np.asarray(model["labels_train"]) == chr(ord('A')+ i)]
 
@@ -158,15 +156,21 @@ def randomPositions(data, labels):
         position = ord(x) - 65
         lettersCount[position] = lettersCount[position] + 1
 
+
     #Reduces their value to between 1 and 10
     for i in range(0,len(lettersCount)):
-        lettersCount[i] = math.ceil(lettersCount[i]/10)
+        lettersCount[i] = math.ceil(lettersCount[i]/8)
+        if lettersCount[i] == 1:
+            lettersCount[i] = 4 #Letters that appear the least have minimal impact on the dataset
+        elif lettersCount[i] <= 6:
+            lettersCount[i] = lettersCount[i] + 3 #Ensures that no letter has few examples
+
 
     #Generates a stratified sample of the dataset
-    randomlist = [None] * sum(lettersCount)
+    randomlist = [-1] * sum(lettersCount)
     randomLabels = [None] * sum(lettersCount)
     count = 0
-    while((randomlist[len(randomlist) - 1]) == None):
+    while((randomlist[len(randomlist) - 1]) == -1):
         n = random.randint(0, (len(data) - 1))
         currentLetter = labels[n]
         currentLetterOrd = ord(currentLetter) - 65
@@ -188,7 +192,7 @@ def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBes
 
     for i in range(len(currentBest),20):
             iterationHighScore = 0
-            for x in range(0,40):
+            for x in range(0,30):
                     if x not in bestPCAs:
                         testPCAs = bestPCAs.copy()
                         testPCAs[i] = x
@@ -209,9 +213,9 @@ def backwardsChaining(lettersData, currentTestData, randomLabels):
 
     for i in range(0,20):
         iterationHighScore = 0
-        for x in range(0,40):
+        for x in range(0,30):
                 if x not in worstPCAs:
-                    testPCAs = list(range(0, 40))
+                    testPCAs = list(range(0, 30))
                     testPCAs = [ele for ele in testPCAs if ele not in worstPCAs]
                     testPCAs.remove(x)
                     score = ratePCAsBinomial(
@@ -222,7 +226,7 @@ def backwardsChaining(lettersData, currentTestData, randomLabels):
                         currentWorstNext = x
         worstPCAs[i] = currentWorstNext
 
-    finalPCAs = list(range(0,40))
+    finalPCAs = list(range(0,30))
     finalPCAs = [ele for ele in finalPCAs if ele not in worstPCAs]
     return finalPCAs
 
@@ -250,7 +254,6 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
     #Calcualtes probability of each letter belonging to each class
     probabilityArray = [None] * 26
     for i in range(0,26):
-        #print(multivarNormalArray[i].pdf(randomVars[:,:]))
         probabilityArray[i] = multivarNormalArray[i].pdf(randomVars[:,:])
     p = np.vstack(probabilityArray)
     index = np.argmax(p, axis=0)
@@ -273,7 +276,7 @@ def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np
     N = covx.shape[0] #N is the number of pixes (existing dimentions)
 
     #w isn't needed as it is an eigenvalue and we only want the vector
-    #Calculate 40 then we will select the best 40 later on in the code
+    #Calculate 30 then we will select the best 30 later on in the code
     w, v = scipy.linalg.eigh(covx, eigvals=(N - numOfDimensions, N - 1)) 
 
     v = np.fliplr(v) #Reverses order of elements along axis 1
@@ -312,7 +315,6 @@ def process_training_data(fvectors_train: np.ndarray, labels_train: np.ndarray) 
     model["fvectors_train"] = fvectors_train_reduced.tolist()
 
     return model
-
 
 def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
     """Dummy implementation of classify squares.
@@ -359,8 +361,6 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
     for i in range(0, len(predictedChars)):
         predictedChars[i] = indexToChar(index[i])
 
-    print(predictedChars)
-
     return predictedChars
 
 def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]:
@@ -388,4 +388,98 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
     Returns:
         list[tuple]: A list of four-element tuples indicating the word positions.
     """
+
+    minWordLength = len(min(words, key=len))
+    largestWordLength = len(max(words, key=len))
+    rangeOfLetters =  largestWordLength - minWordLength + 1
+    
+    sortedWords = [None] * rangeOfLetters
+
+    count = 0
+    for word in words:
+        wordLen = len(word)
+        wordIndex = wordLen - minWordLength 
+        if sortedWords[wordIndex] == None:
+            sortedWords[wordIndex] = [(wordClass(word, count))] 
+        else:
+            sortedWords[wordIndex].append([wordClass(word, count)]) 
+        count = count + 1
+
+    output = []
+
+    print(labels[0])
+
+    maxYCoordinate = len(labels) - 1
+    maxXCoordinate = len(labels[0]) - 1
+
+    for currentYCoordinate in range(0,len(labels)):
+        for currentXCoordinate in range(0,len(labels[currentYCoordinate])):
+            print(calculatePossibleWordLength(currentXCoordinate, currentYCoordinate, maxXCoordinate, maxYCoordinate))
+
+
+
+
+    #Output predicted positions
+    for word in words:
+        currentLenWords = len(word) - minWordLength
+        for currentWord in sortedWords[currentLenWords]:
+            if isinstance(currentWord, list):
+                for extractedWord in currentWord:
+                    if word == extractedWord.word:
+                        output.append(extractedWord.predictedPosition)
+            elif word == currentWord.word:
+                output.append(currentWord.predictedPosition)
+
+    return(output)
+
     return [(0, 0, 1, 1)] * len(words)
+
+def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY) -> np.array:
+    northLen = yCoordinate
+    eastLen = maxX - xCoordinate
+    southLen = maxY - yCoordinate
+    westLen = xCoordinate
+
+    if northLen > eastLen:
+        northEastLen = eastLen
+    else:
+        northEastLen = northLen
+
+    if southLen > eastLen:
+        southEastLen = eastLen
+    else:
+        southEastLen = southLen
+
+    if southLen > westLen:
+        southWestLen = westLen
+    else:
+        southWestLen = southLen
+
+    if northLen > westLen:
+        northWestLen = westLen
+    else:
+        northWestLen = northLen
+
+    return np.array([northLen, northEastLen, eastLen, southEastLen, southLen, southWestLen, westLen, northWestLen])
+
+class wordClass:
+    def __init__(self, wordName, wordIndex):
+        self.word = wordName
+        self.wordLength = len(wordName)
+        self.predictedPosition = (0,0,0,0)
+        self.wordLength = 0
+        self.correctLetters = 0
+        self.found = False
+        self.wordIndex = wordIndex
+
+    def compareWord(self, providedLetters: str, predictedPos):
+        if self.found:
+            return
+        count = 0
+        currentCorrect = 0
+        for let in providedLetters:
+            if self.word[count] == let:
+                currentCorrect = currentCorrect + 1
+        if currentCorrect > self.correctLetters:
+            self.correctLetters = currentCorrect
+            self.predictedPosition = predictedPos
