@@ -98,7 +98,7 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        NUMBER_OF_ITERATIONS = 50
+        NUMBER_OF_ITERATIONS = 30
 
         majorityArray = [0] * 30 #Contains the times each one of the 30 PCA components has been selected as the best
 
