@@ -11,6 +11,8 @@ import math
 from typing import List
 
 import numpy as np
+import numpy.ma as ma
+
 from utils import utils
 from utils.utils import Puzzle
 import scipy.linalg
@@ -79,7 +81,7 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        numberOfIterations = 20
+        numberOfIterations = 50
         majorityArray = [0] * 30 #Contains the times each one of the 30 PCA components has been selected as the best
 
         for count in range(0, numberOfIterations):
@@ -203,6 +205,10 @@ def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBes
                             iterationHighScore = score
                             currentBestNext = testPCAs
 
+            if iterationHighScore == 0:
+                testPCAs[i] = 0
+                currentBestNext = testPCAs
+
             bestPCAs = currentBestNext
     return bestPCAs
 
@@ -243,13 +249,23 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
     #Creates cov array for training data
     covArray = [None] * 26
     for count in range(0,26):
-        covArray[count] = np.cov(newTrain[count], rowvar=0)
+        try:
+            covArray[count] = np.cov(newTrain[count], rowvar=0)
+        except:
+            covArray[count] = ma.cov(newTrain[count], rowvar=0)
     
     #Creates normal dist for training data
     multivarNormalArray = [None] * 26
     for i in range(0,26):
         mean1 = np.mean(newTrain[i], axis=0)
-        multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
+        try:
+            multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
+        except ValueError:
+            covArray[i] = ma.cov(newTrain[count], rowvar=0)
+            multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
+
+
+            
 
     #Calcualtes probability of each letter belonging to each class
     probabilityArray = [None] * 26
@@ -400,41 +416,135 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
         wordLen = len(word)
         wordIndex = wordLen - minWordLength 
         if sortedWords[wordIndex] == None:
-            sortedWords[wordIndex] = [(wordClass(word, count))] 
+            sortedWords[wordIndex] = ([wordClass(word, count)]) 
         else:
-            sortedWords[wordIndex].append([wordClass(word, count)]) 
+            sortedWords[wordIndex].append(wordClass(word, count)) 
         count = count + 1
-
-    output = []
-
-    print(labels[0])
 
     maxYCoordinate = len(labels) - 1
     maxXCoordinate = len(labels[0]) - 1
 
     for currentYCoordinate in range(0,len(labels)):
         for currentXCoordinate in range(0,len(labels[currentYCoordinate])):
-            print(calculatePossibleWordLength(currentXCoordinate, currentYCoordinate, maxXCoordinate, maxYCoordinate))
+            possiblePaths = calculatePossibleWordLength(currentXCoordinate, currentYCoordinate, maxXCoordinate, maxYCoordinate, largestWordLength)
+            while np.any(possiblePaths >= minWordLength - 1):
+                #North
+                if possiblePaths[0] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate
+                    iterationYCoordinate = currentYCoordinate - possiblePaths[0]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (0), (-1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[0] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[0] = possiblePaths[0] - 1
+
+                    
+                #North East
+                if possiblePaths[1] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate + possiblePaths[1]
+                    iterationYCoordinate = currentYCoordinate - possiblePaths[1]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (1), (-1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[1] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+
+                    possiblePaths[1] = possiblePaths[1] - 1
+
+                #East
+                if possiblePaths[2] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate + possiblePaths[2]
+                    iterationYCoordinate = currentYCoordinate 
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (1), (0), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[2] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[2] = possiblePaths[2] - 1
+
+                #South East
+                if possiblePaths[3] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate + possiblePaths[3]
+                    iterationYCoordinate = currentYCoordinate + possiblePaths[3]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (1), (1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[3] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[3] = possiblePaths[3] - 1
+
+
+                #South
+                if possiblePaths[4] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate
+                    iterationYCoordinate = currentYCoordinate + possiblePaths[4]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (0), (1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[4] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[4] = possiblePaths[4] - 1
+
+
+                #South West
+                if possiblePaths[5] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate - possiblePaths[5]
+                    iterationYCoordinate = currentYCoordinate + possiblePaths[5]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (-1), (1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[5] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[5] = possiblePaths[5] - 1
+
+
+                #West
+                if possiblePaths[6] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate - possiblePaths[6]
+                    iterationYCoordinate = currentYCoordinate
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (-1), (0), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[6] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[6] = possiblePaths[6] - 1
+
+
+                #North West
+                if possiblePaths[7] >= minWordLength - 1:
+                    iterationXCoordinate = currentXCoordinate - possiblePaths[7]
+                    iterationYCoordinate = currentYCoordinate - possiblePaths[7]
+                    currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
+                        currentYCoordinate, (-1), (-1), iterationXCoordinate, iterationYCoordinate, labels)
+
+                    for word in sortedWords[possiblePaths[7] - minWordLength + 1]:
+                        word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
+
+                    possiblePaths[7] = possiblePaths[7] - 1
 
 
 
 
     #Output predicted positions
+    output = []
     for word in words:
         currentLenWords = len(word) - minWordLength
         for currentWord in sortedWords[currentLenWords]:
-            if isinstance(currentWord, list):
-                for extractedWord in currentWord:
-                    if word == extractedWord.word:
-                        output.append(extractedWord.predictedPosition)
-            elif word == currentWord.word:
+            if word == currentWord.word:
                 output.append(currentWord.predictedPosition)
+
 
     return(output)
 
-    return [(0, 0, 1, 1)] * len(words)
-
-def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY) -> np.array:
+def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY, maxWordLen) -> np.array:
     northLen = yCoordinate
     eastLen = maxX - xCoordinate
     southLen = maxY - yCoordinate
@@ -460,7 +570,25 @@ def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY) -> np.arra
     else:
         northWestLen = northLen
 
-    return np.array([northLen, northEastLen, eastLen, southEastLen, southLen, southWestLen, westLen, northWestLen])
+    results = np.array([northLen, northEastLen, eastLen, southEastLen, southLen, southWestLen, westLen, northWestLen])
+
+    tooBig = np.nonzero(results > maxWordLen - 1)
+
+    results[tooBig] = (maxWordLen - 1)
+
+    return results
+
+def getLettersBetweenRange(startX, startY, rulesForX, rulesForY, endX, endY, letters) -> str:
+    word = "" + letters[startY][startX]
+    
+    while (startX != endX or startY != endY):
+        startX = startX + rulesForX
+        startY = startY + rulesForY
+        word += (letters[startY][startX])
+
+    return word
+
+
 
 class wordClass:
     def __init__(self, wordName, wordIndex):
@@ -478,8 +606,11 @@ class wordClass:
         count = 0
         currentCorrect = 0
         for let in providedLetters:
-            if self.word[count] == let:
-                currentCorrect = currentCorrect + 1
+            if self.word[count].lower() == let.lower():
+                currentCorrect += 1
+            count += 1
         if currentCorrect > self.correctLetters:
             self.correctLetters = currentCorrect
             self.predictedPosition = predictedPos
+            if currentCorrect == len(self.word):
+                self.found = True
