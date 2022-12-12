@@ -2,7 +2,12 @@
 
 Dummy solution the COM2004/3004 assignment.
 
-REWRITE THE FUNCTIONS BELOW AND REWRITE THIS DOCSTRING
+File: System.py
+Description: Used by train.py and evaluate.py to learn how to recognise letters i
+             a word search and how to solve word searches.
+Author: Tom Pearson & Prof Jon Barker
+Date Created: 31/10/2022
+Date Last Modified: 12/12/2022
 
 version: v1.0
 """
@@ -53,16 +58,28 @@ def load_puzzle_feature_vectors(image_dir: str, puzzles: List[Puzzle]) -> np.nda
     return utils.load_puzzle_feature_vectors(image_dir, puzzles)
 
 def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
-    """Reduce the dimensionality of a set of feature vectors down to N_DIMENSIONS.
+    """ Takes the raw feature vectors and reduces them down to the required number of
+    dimensions using PCA and Normal Distribution.
 
-    REWRITE THIS FUNCTION AND THIS DOCSTRING
+    Firstly it calculates PCA's up to 30. Then it calculates the best possible PCAs
+    to chose out of the 30.
 
-    Takes the raw feature vectors and reduces them down to the required number of
-    dimensions. Note, the `model` dictionary is provided as an argument so that
-    you can pass information from the training stage, e.g. if using a dimensionality
-    reduction technique that requires training, e.g. PCA.
+    It calculates this by selecting a stratified sample of letters from the dataset.
+        A stratified sample is a sample in which the percentage of each element chosen
+        is the same percentage as what occurs in the data set * a multiplier.
 
-    The dummy implementation below simply returns the first N_DIMENSIONS columns.
+    Using the test data the PCAs are then ranked by:
+    1) Training data is (data) - (test data) and is seperated into a list where each index
+       contains a different array of a particular letter. e.g. [0] = A, [1] = B, [2] = C, etc
+    2) Forwards chaining on the training data using test data to calculate score
+    3) Completing backwards chaining on the training data using test data to calculate score
+    4) Creating a list of PCAs that occured in both
+    5) Use forwards chaining to fill in the rest of the list up to 20 elements.
+    6) The found PCAs are the saved to a counter
+    7) Steps 1-5 are repeated a desired number of times using a new stratified sample
+       in each iterations
+    
+    The top 20 PCAs that occured are saved as the best PCAs. Data is converted to the top 20 PCAs
 
     Args:
         data (np.ndarray): The feature vectors to reduce.
@@ -81,10 +98,11 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         labels = model["labels_train"]
 
-        numberOfIterations = 50
+        NUMBER_OF_ITERATIONS = 50
+
         majorityArray = [0] * 30 #Contains the times each one of the 30 PCA components has been selected as the best
 
-        for count in range(0, numberOfIterations):
+        for count in range(0, NUMBER_OF_ITERATIONS):
             #Random Sample
             randomIndexList, randomLabels = randomPositions(data, labels)
             #Extract random sample from train data
