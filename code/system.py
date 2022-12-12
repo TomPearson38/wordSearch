@@ -76,7 +76,7 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
     4) Creating a list of PCAs that occured in both
     5) Use forwards chaining to fill in the rest of the list up to 20 elements.
     6) The found PCAs are the saved to a counter
-    7) Steps 1-5 are repeated a desired number of times using a new stratified sample
+    7) Steps 1-6 are repeated a desired number of times using a new stratified sample
        in each iterations
     
     The top 20 PCAs that occured are saved as the best PCAs. Data is converted to the top 20 PCAs
@@ -105,6 +105,7 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
         for count in range(0, NUMBER_OF_ITERATIONS):
             #Random Sample
             randomIndexList, randomLabels = randomPositions(data, labels)
+
             #Extract random sample from train data
             currentTestData = pcatrain_data[randomIndexList, :]
             currentTrainData = np.delete(pcatrain_data, randomIndexList, axis=0)
@@ -135,10 +136,10 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         numpyMajority = np.array(majorityArray)
 
+        #Copies the top 20 PCAs' positions to the bestPCAs
         bestPCAs = np.argpartition(numpyMajority, -20)[-20:]
 
         bestPCAs = bestPCAs.tolist()
-
         print(bestPCAs)
 
         #Identifying each individual letter in data.
@@ -151,6 +152,8 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
         for i in range(0,26):
             selectedFeaturesData[i] = (lettersData[i])[:, bestPCAs]
 
+        #Needed in order to calculate binomial later on in when identifying letters in the word search.
+        #The actual binomial calculation cannot be saved to JSON so need to save how to calculate it
         for i in range(0,26):
             model["selectedFeaturesData{}".format(i)] = selectedFeaturesData[i].tolist()
 
@@ -160,15 +163,24 @@ def reduce_dimensions(data: np.ndarray, model: dict) -> np.ndarray:
 
         reduced_data = pcatrain_data[:,bestPCAs]
         print(reduced_data.shape)
+
+    #Called in the evaluation phase as required data is in model    
     else:
+        #Test data is converted to correct PCAs
         pcatrain_data = np.dot((data - model["train_mean"]), np.asarray(model["PCA"]))
         reduced_data = pcatrain_data[:, model["best_dimensions"]]
 
-    #Need to subtract the mean of the data set from the training data mean.
-    #To the rest of the data including the test data
     return reduced_data
 
+
 def randomPositions(data, labels):
+    """Generates a stratified sample from the training data in order to test PCA combinations
+
+    Counts the number of times each letter occurs.
+    Divides them by a specified modifier
+    Generates random numbers based on which letter is needed
+    Returns a sample that is reflective of the actual dataset letter occurance 
+    """
     lettersCount = [0] * 26
 
     #Counts the number of each letter
@@ -201,60 +213,103 @@ def randomPositions(data, labels):
     return randomlist, randomLabels
 
 def forwardsChaining(currentTrainData, currentTestData, randomLabels, currentBest):
+    """Adds PCAs that improve the representation of the data continously till length is reached.
+
+    For each iteration of the main outer loop, each PCA is added to the list of the best possible
+    PCAs (at the start it is empty unless one is provided). Each possible addition is ranked,
+    with the best addition being added. This process is then repeated till the desired length
+    is reached
+    """
+    #Previous list can be provided. If not one is set to empty
     if currentBest == None:
         currentBest = []
+
     bestPCAs = [None] * 20
     testPCAs = [None] * 20
     iterationHighScore = 0
     currentBestNext = 0
+
+    #Data is copied to a new array to prevent accidental modification to provided data structures
     for i in range(0, len(currentBest)):
         bestPCAs[i] = currentBest[i]
 
+    #Main Outer Loop
+    #Data is forwards chained to find best possible combination
     for i in range(len(currentBest),20):
             iterationHighScore = 0
             for x in range(0,30):
                     if x not in bestPCAs:
                         testPCAs = bestPCAs.copy()
+                        #New element added to list
                         testPCAs[i] = x
+
+                        #Score for element is calculated
                         score = ratePCAsBinomial(
                             currentTrainData, currentTestData, randomLabels, testPCAs[0:(i+1)]
                         )
+
+                        #If new highest score it is saved
                         if(score > iterationHighScore):
                             iterationHighScore = score
                             currentBestNext = testPCAs
 
+            #Default provided PCA if error occurs or if PCAs cannot be ranked
             if iterationHighScore == 0:
                 testPCAs[i] = 0
                 currentBestNext = testPCAs
 
+            #Best next PCA list is saved ready for next iteration
             bestPCAs = currentBestNext
+
+    #Best overall list is returned
     return bestPCAs
 
 def backwardsChaining(lettersData, currentTestData, randomLabels):
+    """Removes the least impactful PCAs from list of PCAs till desired length is met.
+    
+    For each iteration of the main outer loop, each PCA is removed from the list one at a time
+    Each possible index removed is ranked, with the varaible removed that attained the best
+    score saved. This process is then repeated till the desired length is reached    
+    """
+
     worstPCAs = [None] * 20
     testPCAs = [None] * 20
     iterationHighScore = 0
 
+    #Main Outer Loop
+    #Data is backwards chained to find best possible combination
     for i in range(0,20):
         iterationHighScore = 0
         for x in range(0,30):
                 if x not in worstPCAs:
                     testPCAs = list(range(0, 30))
+                    #Worst PCAs removed
                     testPCAs = [ele for ele in testPCAs if ele not in worstPCAs]
+                    #New PCA removed
                     testPCAs.remove(x)
+                    #Score generated
                     score = ratePCAsBinomial(
                         lettersData, currentTestData, randomLabels, testPCAs[0:(i+1)]
                     )
+                    #Best one saved
                     if(score > iterationHighScore):
                         iterationHighScore = score
                         currentWorstNext = x
+        #Worst PCA noted
         worstPCAs[i] = currentWorstNext
 
+    #Worse PCAs removed from final return value
     finalPCAs = list(range(0,30))
     finalPCAs = [ele for ele in finalPCAs if ele not in worstPCAs]
     return finalPCAs
 
 def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
+    """Rates the provided test data from the provided training data using provided features.
+
+    Calculates multivariate binomial distribution from training data (already seperated into 
+    letters using the index of the position in the list). The values of the test data are then 
+    predicted and compared against their actual values. A percentage of correct data is then returned.    
+    """
     newTrain = [None] * len(train)
     
     #Converts test data to desired feature set
@@ -270,6 +325,7 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
         try:
             covArray[count] = np.cov(newTrain[count], rowvar=0)
         except:
+            #If covariance cannot be calculated it is estimated instead
             covArray[count] = ma.cov(newTrain[count], rowvar=0)
     
     #Creates normal dist for training data
@@ -279,13 +335,11 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
         try:
             multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
         except ValueError:
+            #Error in covariance means that multivariate normal cannot be calculated and is instead estimated
             covArray[i] = ma.cov(newTrain[count], rowvar=0)
             multivarNormalArray[i] = multivariate_normal(mean=mean1, cov=covArray[i], allow_singular=True)
 
-
-            
-
-    #Calcualtes probability of each letter belonging to each class
+    #Calcualtes probability of each test letter belonging to each class
     probabilityArray = [None] * 26
     for i in range(0,26):
         probabilityArray[i] = multivarNormalArray[i].pdf(randomVars[:,:])
@@ -295,8 +349,8 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
     for i in range(0, len(randomVarLabels)):
         predictedChars[i] = indexToChar(index[i])
 
+    #Correct number of letters percentage calculated
     correct = [None] * len(predictedChars)
-
     for i in range(0, len(predictedChars)):
         if predictedChars[i] == randomVarLabels[i]:
             correct[i] = True
@@ -306,6 +360,10 @@ def ratePCAsBinomial(train, randomVars, randomVarLabels, features) -> float:
     return (np.sum(correct) * 100.0 / len(randomVarLabels))
 
 def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np.ndarray:
+    """Calculates the principal components from the provided data. 
+
+    Based of code from lab class wrote by Prof Jon Barker
+    """
     covx = np.cov(data, rowvar=0)
     N = covx.shape[0] #N is the number of pixes (existing dimentions)
 
@@ -319,17 +377,9 @@ def calculate_principal_components(data: np.ndarray, numOfDimensions: int) -> np
 def process_training_data(fvectors_train: np.ndarray, labels_train: np.ndarray) -> dict:
     """Process the labeled training data and return model parameters stored in a dictionary.
 
-    REWRITE THIS FUNCTION AND THIS DOCSTRING
-
-    This is your classifier's training stage. You need to learn the model parameters
-    from the training vectors and labels that are provided. The parameters of your
-    trained model are then stored in the dictionary and returned. Note, the contents
-    of the dictionary are up to you, and it can contain any serializable
-    data types stored under any keys. This dictionary will be passed to the classifier.
-
-    The dummy implementation stores the labels and the dimensionally reduced training
-    vectors. These are what you would need to store if using a non-parametric
-    classifier such as a nearest neighbour or k-nearest neighbour classifier.
+    Calls reduce dimensions which stores all the data needed in the model.
+    It also saves the result of reduce dimensions to the model in the form of the
+    best PCAd training data
 
     Args:
         fvectors_train (np.ndarray): training data feature vectors stored as rows.
@@ -339,27 +389,27 @@ def process_training_data(fvectors_train: np.ndarray, labels_train: np.ndarray) 
         dict: a dictionary storing the model data.
     """
 
-    # The design of this is entirely up to you.
-    # Note, if you are using an instance based approach, e.g. a nearest neighbour,
-    # then the model will need to store the dimensionally-reduced training data and labels
-    # e.g. Storing training data labels and feature vectors in the model.
+    #Model is created
     model = {}
+    #Training labels are saved
     model["labels_train"] = labels_train.tolist()
+
+    #Most of the calculations happen in this function which also saves to model
     fvectors_train_reduced = reduce_dimensions(fvectors_train, model)
+
+    #Reduced data is saved to the model
     model["fvectors_train"] = fvectors_train_reduced.tolist()
 
     return model
 
 def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
-    """Dummy implementation of classify squares.
+    """Classifys data using multivariate normal distributions.
 
-    REWRITE THIS FUNCTION AND THIS DOCSTRING
-
-    This is the classification stage. You are passed a list of unlabelled feature
-    vectors and the model parameters learn during the training stage. You need to
-    classify each feature vector and return a list of labels.
-
-    In the dummy implementation, the label 'E' is returned for every square.
+    First the provided data is converted to PCAs. The best PCAs which were calculated in the
+    training phase are then used to filter the created PCAs.
+    Secondly the multivariate distributions of the training data are calculated using the training
+    data saved to the model. They have to be calculated again at this stage as they are unable to be
+    saved to the model.
 
     Args:
         fvectors_train (np.ndarray): feature vectors that are to be classified, stored as rows.
@@ -391,6 +441,8 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
         probabilityArray[i] = multivarNormalArray[i].pdf(fvectors_test[:,:])
     p = np.vstack(probabilityArray)
     index = np.argmax(p, axis=0)
+
+    #Letters are turned into desired format for returning
     predictedChars = [None] * len(fvectors_test[:])
     for i in range(0, len(predictedChars)):
         predictedChars[i] = indexToChar(index[i])
@@ -398,20 +450,21 @@ def classify_squares(fvectors_test: np.ndarray, model: dict) -> List[str]:
     return predictedChars
 
 def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]:
-    """Dummy implementation of find_words.
+    """Finds the words in the provided labels array using the labels provided.
 
-    REWRITE THIS FUNCTION AND THIS DOCSTRING
+    First the words are converted into a wordClass and sorted in a list based on the
+    length of the word.
 
-    This function searches for the words in the grid of classified letter labels.
-    You are passed the letter labels as a 2-D array and a list of words to search for.
-    You need to return a position for each word. The word position should be
-    represented as tuples of the form (start_row, start_col, end_row, end_col).
-
-    Note, the model dict that was learnt during training has also been passed to this
-    function. Most simple implementations will not need to use this but it is provided
-    in case you have ideas that need it.
-
-    In the dummy implementation, the position (0, 0, 1, 1) is returned for every word.
+    The main outer loop then calculates each possible position for the provided words.
+    It does this by:
+    1) Calculating the possible directions a word could be in using the minimum and maxium
+       word length to set the length of the extracted words.
+    2) Extracting the possible characters in each direction and slowly decreasing the length
+       of the characters.
+    3) At each of the lengths the word guess is compared against each "wordClass" of the same length
+       in order to calculate the probability of the word being at that position.
+    4) If a higher probability is found it is saved.
+    5) Steps 1-4 are repeated for every index in the letters grid
 
     Args:
         labels (np.ndarray): 2-D array storing the character in each
@@ -425,10 +478,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
     minWordLength = len(min(words, key=len))
     largestWordLength = len(max(words, key=len))
-    rangeOfLetters =  largestWordLength - minWordLength + 1
+    rangeOfLetters =  largestWordLength - minWordLength + 1 #1 is added as the range created is not inclusive
     
     sortedWords = [None] * rangeOfLetters
 
+    #Words are sorted into their ranges and converted to wordClass objects
+    #Each index contains a word length. The smallest is at the first and 
+    #the largest is at the end index.
     count = 0
     for word in words:
         wordLen = len(word)
@@ -444,15 +500,19 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
     for currentYCoordinate in range(0,len(labels)):
         for currentXCoordinate in range(0,len(labels[currentYCoordinate])):
+            #Calculates the length of the word that can be extracted from each direction of search
             possiblePaths = calculatePossibleWordLength(currentXCoordinate, currentYCoordinate, maxXCoordinate, maxYCoordinate, largestWordLength)
+            #Loop extracts possible words from each direction
             while np.any(possiblePaths >= minWordLength - 1):
                 #North
                 if possiblePaths[0] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to
                     iterationXCoordinate = currentXCoordinate
                     iterationYCoordinate = currentYCoordinate - possiblePaths[0]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (0), (-1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[0] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -461,11 +521,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
                     
                 #North East
                 if possiblePaths[1] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to                    
                     iterationXCoordinate = currentXCoordinate + possiblePaths[1]
                     iterationYCoordinate = currentYCoordinate - possiblePaths[1]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (1), (-1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[1] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -474,11 +536,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #East
                 if possiblePaths[2] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate + possiblePaths[2]
                     iterationYCoordinate = currentYCoordinate 
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (1), (0), iterationXCoordinate, iterationYCoordinate, labels)
-
+                    
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[2] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -486,11 +550,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #South East
                 if possiblePaths[3] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate + possiblePaths[3]
                     iterationYCoordinate = currentYCoordinate + possiblePaths[3]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (1), (1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[3] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -499,11 +565,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #South
                 if possiblePaths[4] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate
                     iterationYCoordinate = currentYCoordinate + possiblePaths[4]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (0), (1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[4] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -512,11 +580,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #South West
                 if possiblePaths[5] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate - possiblePaths[5]
                     iterationYCoordinate = currentYCoordinate + possiblePaths[5]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (-1), (1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[5] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -525,11 +595,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #West
                 if possiblePaths[6] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate - possiblePaths[6]
                     iterationYCoordinate = currentYCoordinate
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (-1), (0), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[6] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -538,11 +610,13 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
                 #North West
                 if possiblePaths[7] >= minWordLength - 1:
+                    #Coordinates of where the word will be extracted up to 
                     iterationXCoordinate = currentXCoordinate - possiblePaths[7]
                     iterationYCoordinate = currentYCoordinate - possiblePaths[7]
                     currentLettersInRange = getLettersBetweenRange(currentXCoordinate,
                         currentYCoordinate, (-1), (-1), iterationXCoordinate, iterationYCoordinate, labels)
 
+                    #Extracted string compared against words of the same length
                     for word in sortedWords[possiblePaths[7] - minWordLength + 1]:
                         word.compareWord(currentLettersInRange, (currentYCoordinate, currentXCoordinate, iterationYCoordinate, iterationXCoordinate))
 
@@ -551,7 +625,7 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
 
 
 
-    #Output predicted positions
+    #Output predicted positions in order that was input
     output = []
     for word in words:
         currentLenWords = len(word) - minWordLength
@@ -563,11 +637,15 @@ def find_words(labels: np.ndarray, words: List[str], model: dict) -> List[tuple]
     return(output)
 
 def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY, maxWordLen) -> np.array:
+    """Calculates the possible word length in each direction for the proivded coordinates"""
+
     northLen = yCoordinate
     eastLen = maxX - xCoordinate
     southLen = maxY - yCoordinate
     westLen = xCoordinate
 
+    #Diagonal positions are only possible up to the distance from the smallest axis
+    #in the direction they are being extracted from
     if northLen > eastLen:
         northEastLen = eastLen
     else:
@@ -590,13 +668,14 @@ def calculatePossibleWordLength(xCoordinate, yCoordinate, maxX, maxY, maxWordLen
 
     results = np.array([northLen, northEastLen, eastLen, southEastLen, southLen, southWestLen, westLen, northWestLen])
 
+    #Possible lengths over the maximum word value are capped to the maximum word length
     tooBig = np.nonzero(results > maxWordLen - 1)
-
     results[tooBig] = (maxWordLen - 1)
 
     return results
 
 def getLettersBetweenRange(startX, startY, rulesForX, rulesForY, endX, endY, letters) -> str:
+    """Returns the letters in the specified range"""
     word = "" + letters[startY][startX]
     
     while (startX != endX or startY != endY):
@@ -609,16 +688,24 @@ def getLettersBetweenRange(startX, startY, rulesForX, rulesForY, endX, endY, let
 
 
 class wordClass:
+    """Used to contain each word and its properties
+    
+    The word's length, value, predicted position, index in original list
+    """
     def __init__(self, wordName, wordIndex):
         self.word = wordName
         self.wordLength = len(wordName)
         self.predictedPosition = (0,0,0,0)
-        self.wordLength = 0
         self.correctLetters = 0
         self.found = False
         self.wordIndex = wordIndex
 
     def compareWord(self, providedLetters: str, predictedPos):
+        """Compares the current best word saved and the new proposed location. 
+        
+        If the new location has more letters that are correct than the current position then it
+        is saved.
+        """
         if self.found:
             return
         count = 0
