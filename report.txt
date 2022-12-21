@@ -1,0 +1,66 @@
+# Word Search assignment report
+
+[Replace the square-bracketed text with your own text. *Leave everything else unchanged.* 
+Note, the reports are parsed to check word limits, etc. Changing the format may cause 
+the parsing to fail.]
+
+## Feature Extraction (Max 200 Words)
+
+[My feature extraction calculates 30 PCA components and finds the best 20 PCAs. It does this 
+by taking a stratified sample of data from the training data to test. It then does forwards 
+chaining and backwards chaining to find the best 20 PCAs based on the training data and test 
+data, ranking them by using a multivariate normal distribution. The PCAs that occur in both 
+are then extracted and the remaining PCAs up to length 20 are calculated using forwards 
+chaining. The program makes note of the best PCAs calculated and repeats this process a 
+defined number of times, building up a running tally of the best positions. After the 
+iterations are completed the top 20 PCAs that occurred the most in the iterations are chosen 
+to be the 20 dimensions. PCA was chosen as it accurately simplifies the spread of the 
+distribution of letters in the images and the multivariate normal distribution is better for 
+quickly identifying which letter is which on the lower-quality data. Multiple iterations of 
+the best PCA are needed as there is a random stratified sample from the data. Therefore, it 
+reduces the impact of anomalies.]
+
+## Letter Classifier (Max 200 Words)
+
+[Using the previously selected best PCAs, the data is converted and reduced in dimensionality 
+to 20 dimensions. Then the saved multivariate normal distributions from the training data, 
+which are stored in the model, are used to predict which letter is most likely to be which. 
+I tested both nearest neighbour and multivariate normal to plot the data. I found out during 
+my testing that multivariate normal improved the poor-quality scores significantly but decreased 
+the good-quality scores marginally. As the algorithm for word finder can deal with some missing 
+letters, I concluded that the better score on the poorer data was more important for attaining 
+accurate word accuracy than the smaller loss in high data letter identification.]
+
+## Word Finder (Max 200 Words)
+
+[First, the words are converted to a class called word class. This way all the information about
+them is contained in one place such as the word length, its predicted position and the number of 
+correct letters at that position. Then the program iterates through each position on the board. 
+At each position, each letter is examined for the longest possible word that it can obtain from 
+each of the 8 directions. For each direction, the program then extracts the longest word. It is 
+then compared to words of the same size. Then the program decreases the length of the word by 
+one and compares it to words of that length, till it reaches the minimum word size. At each 
+comparison, the word class is called and the extracted word is supplied. It then checks to see 
+if more letters are in the correct position than the one that is already saved in the class. If 
+it is then it is overridden with the new location. After each position has been checked it is 
+returned as a list. I chose this method as it ensures that every possible combination of 
+positions has been checked.]
+
+## Performance
+
+My percentage correctness scores (to 1 decimal place) for the development data are as follows.
+
+High quality data:
+
+- Percentage Letters Correct: 96.7%
+- Percentage Words Correct: 100.0%
+
+Low quality data:
+
+- Percentage Letters Correct: 56.0%
+- Percentage Words Correct: 52.8%
+
+## Other information (Optional, Max 100 words)
+
+[Optional: highlight any significant aspects of your system that are NOT covered in the
+sections above]
